@@ -1,0 +1,28 @@
+# Pond Security AI - Configuration File
+
+model:
+  type: "yolov8n"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  weights: "yolov8n.pt"
+  confidence_threshold: 0.4
+
+camera:
+  source: 0  # 0 for default webcam, or RTSP URL for IP cameras
+  frame_width: 640
+  frame_height: 480
+
+detection:
+  target_classes:
+    - "person"
+    - "cat"
+    - "bird"
+  min_confidence: 0.4
+
+alert:
+  display_alert: true
+  alert_color: [0, 0, 255]  # BGR format (Red)
+  box_color: [0, 0, 255]
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "pond_security.log"
