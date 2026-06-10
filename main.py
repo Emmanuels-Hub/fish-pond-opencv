@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from ultralytics import YOLO
 
-# Setup logging
+### Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -17,6 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+### Configuration and utility functions
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load configuration from YAML file."""
     try:
@@ -34,7 +35,7 @@ def load_config(config_path: str = "config.yaml") -> dict:
         logger.error(f"Failed to load config: {e}")
         sys.exit(1)
 
-
+### Model loading and camera initialization with error handling
 def load_model(model_path: str):
     """Load YOLO model with error handling."""
     try:
@@ -50,7 +51,7 @@ def load_model(model_path: str):
         logger.error(f"Failed to load model: {e}")
         sys.exit(1)
 
-
+### Camera initialization with error handling
 def initialize_camera(source: int | str, width: int, height: int):
     """Initialize camera with error handling."""
     try:
@@ -70,7 +71,7 @@ def initialize_camera(source: int | str, width: int, height: int):
         logger.error(f"Failed to initialize camera: {e}")
         sys.exit(1)
 
-
+### Detection logic
 def is_target_class(class_id: int, class_names: dict, target_classes: list) -> bool:
     """Check if detected class is in target classes."""
     try:
@@ -79,7 +80,7 @@ def is_target_class(class_id: int, class_names: dict, target_classes: list) -> b
         logger.warning(f"Invalid class ID: {class_id}, Error: {e}")
         return False
 
-
+### Main detection loop with error handling
 def run_detection_loop(cap, model, config: dict):
     """Main detection loop."""
     target_classes = config["detection"]["target_classes"]
@@ -175,7 +176,7 @@ def run_detection_loop(cap, model, config: dict):
         cv2.destroyAllWindows()
         logger.info(f"Camera released. Total frames processed: {frame_count}")
 
-
+### Main entry point
 def main():
     """Main entry point."""
     logger.info("=" * 60)

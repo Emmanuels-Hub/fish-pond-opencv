@@ -15,6 +15,7 @@ detection:
     - "person"
     - "cat"
     - "bird"
+  
   min_confidence: 0.4
 
 alert:
