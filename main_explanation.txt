@@ -1,0 +1,162 @@
+POND SECURITY AI - MAIN.PY EXPLANATION
+=====================================
+
+This file contains the main program that runs a security system for a fish pond.
+It uses artificial intelligence (YOLO model) to detect predators in video feeds.
+
+
+PART 1: IMPORTS AND SETUP
+=========================
+
+The program starts by importing necessary libraries:
+- cv2: A computer vision library used to capture video from cameras and display it
+- logging: Used to record what the program is doing (for debugging and records)
+- yaml: Used to read configuration files
+- sys: Used to exit the program if something goes wrong
+- Path: Used to check if files exist before using them
+- YOLO: The AI model that recognizes objects in images
+
+The program sets up logging to save messages to a file called "pond_security.log"
+and also display them on the screen.
+
+
+PART 2: HELPER FUNCTIONS
+=========================
+
+Function 1: load_config()
+- What it does: Reads the settings from a YAML file called "config.yaml"
+- Why it matters: The program needs to know things like which camera to use, 
+  what classes (animals) to look for, and how confident the AI needs to be
+- If the file doesn't exist or has errors, it stops the program and logs the error
+
+Function 2: load_model()
+- What it does: Loads the AI model from a file (usually "yolov8n.pt")
+- Why it matters: This is the brain of the system - it can recognize objects in images
+- The YOLO model is pre-trained to recognize many things like animals, people, etc.
+- If the model file is missing or broken, it stops the program and logs the error
+
+Function 3: initialize_camera()
+- What it does: Connects to a camera and sets it up to the right size
+- Takes 3 inputs: where the camera is (camera number or video file path),
+  and what width and height you want for the video
+- Returns an object that can read video frames one by one
+- If the camera can't be opened, it stops the program and logs the error
+
+Function 4: is_target_class()
+- What it does: Checks if an object the AI found matches one of the animals
+  we care about (like if we only care about birds, this checks if it's a bird)
+- Takes the class ID (what the AI thinks it found), the class names dictionary,
+  and the list of target classes (animals we want to detect)
+- Returns true or false
+
+
+PART 3: THE MAIN DETECTION LOOP
+================================
+
+Function: run_detection_loop()
+
+This is the heart of the program. It runs continuously and does the following:
+
+Step 1: Read settings from the config
+- Gets the list of animals to watch for (target classes)
+- Gets the minimum confidence level (how sure the AI needs to be)
+- Gets alert settings (colors for boxes and warning text)
+- Gets the list of all class names the AI knows about
+
+Step 2: Infinite loop (keeps running forever until user stops it)
+For each frame from the camera:
+
+  a) Capture the frame
+     - Read one image/frame from the camera video
+     - If reading fails, break out of the loop and close the camera
+  
+  b) Run AI detection
+     - Send the frame to the YOLO model
+     - The model returns all objects it found with:
+       * A box location (where it is in the image)
+       * A confidence score (how sure it is 0-1)
+       * A class ID (what type of object it is)
+  
+  c) Check each detected object
+     - Go through all objects the AI found
+     - Skip any that have low confidence (less than minimum required)
+     - Get the object's name/label
+     - If it matches one of our target animals, mark an alert
+  
+  d) Draw boxes on the frame
+     - For each target animal found, draw a colored rectangle around it
+     - Write the animal's name and confidence score on top of the box
+  
+  e) Show alert if needed
+     - If a target animal was found, display "⚠ INTRUDER DETECTED" in red
+     - Write a warning message to the log file with details
+  
+  f) Display the frame
+     - Show the video with boxes and alert on the screen
+  
+  g) Wait for user input
+     - Check if user pressed 'q' to quit
+     - If so, stop the program gracefully
+
+Step 3: Error handling
+- If something goes wrong while processing a frame, log the error but keep going
+- If user presses Ctrl+C (keyboard interrupt), log it and stop
+- Finally, close the camera and clean up
+
+
+PART 4: THE MAIN ENTRY POINT
+=============================
+
+Function: main()
+
+This function orchestrates (controls) the entire program:
+
+1. Print a startup message to the log
+2. Load the configuration file
+3. Extract the model path from the configuration
+4. Load the YOLO AI model
+5. Extract camera settings from the configuration
+6. Initialize the camera with those settings
+7. Start the detection loop (the main part of the program)
+8. Print a shutdown message to the log
+
+The final "if __name__ == "__main__":" part means:
+- Only run the main() function if this file is being run directly
+- This allows other programs to import functions from this file without running it
+
+
+HOW IT ALL WORKS TOGETHER
+==========================
+
+1. User runs: python main.py
+
+2. Program loads config (camera source, alert colors, which animals to detect)
+
+3. Program loads the AI model (the brain that recognizes animals)
+
+4. Program connects to the camera
+
+5. Program enters a loop that:
+   - Captures video frames
+   - Sends each frame to the AI
+   - Checks if any target animals are in the frame
+   - Draws boxes around found animals
+   - Shows alerts and logs warnings
+   - Displays the video on screen
+
+6. User can press 'q' to quit at any time
+
+7. Program closes camera, cleans up, and exits
+
+
+KEY CONCEPTS
+============
+
+- Logging: Every important action is recorded to pond_security.log file
+- Error Handling: If something goes wrong, the program tries to handle it gracefully
+- Configuration: Settings are in config.yaml, not hardcoded, so you can change
+  them without editing this Python file
+- Continuous Loop: The program keeps watching the camera forever until told to stop
+- AI Detection: YOLO model recognizes objects and provides boxes, labels, and confidence scores
+- Confidence Threshold: Only alerts are raised if the AI is confident enough
+- Frame-by-frame: The program processes video one frame at a time
