@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: pond-security-server
+    runtime: python
+    region: oregon       # Change to: frankfurt, singapore, ohio — nearest to you
+    plan: free           # Upgrade to starter ($7/mo) for always-on + more RAM
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn flask_server:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    envVars:
+      - key: MODEL_PATH
+        value: yolov8n.pt
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+    healthCheckPath: /api/health
+    autoDeploy: true

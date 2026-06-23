@@ -1,29 +1,46 @@
-# Pond Security AI - Configuration File
+# Pond Security AI — Configuration File
 
 model:
-  type: "yolov8n"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  type: "yolov8n"
   weights: "yolov8n.pt"
   confidence_threshold: 0.4
 
 camera:
-  source: 0  # 0 for default webcam, or RTSP URL for IP cameras
-  frame_width: 640
-  frame_height: 480
+  resolution: "640x480"
+  fps: 5                    # Frames pushed to server per second
 
 detection:
   target_classes:
     - "person"
     - "cat"
+    - "dog"
     - "bird"
-  
+    - "bear"
   min_confidence: 0.4
 
 alert:
   display_alert: true
-  alert_color: [0, 0, 255]  # BGR format (Red)
-  box_color: [0, 0, 255]
+  alert_color: [0, 0, 255]  # BGR — Red banner on annotated frame
+  box_color: [0, 255, 0]    # BGR — Green bounding box
+
+# ── PIR Sensor (Raspberry Pi Zero) ───────────────────────────────
+pir:
+  gpio_pin: 4               # BCM pin connected to PIR OUT
+  idle_timeout_seconds: 30  # Stop streaming N seconds after PIR goes LOW
+
+# ── Buzzer (Raspberry Pi Zero) ───────────────────────────────────
+buzzer:
+  gpio_pin: 17              # BCM pin connected to buzzer + leg
+  buzzer_type: "active"     # "active" (self-oscillating) or "passive" (PWM)
+  cooldown_seconds: 5       # Min seconds between consecutive alerts
+  beep_count: 3             # Number of beeps per alert
+  beep_on_ms: 300
+  beep_off_ms: 200
+
+# ── Status LED (optional) ─────────────────────────────────────────
+led:
+  gpio_pin: 27              # BCM pin for status LED (comment out to disable)
 
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  level: "INFO"
   file: "pond_security.log"

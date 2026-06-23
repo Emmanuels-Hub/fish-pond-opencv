@@ -1,0 +1,17 @@
+# Raspberry Pi Zero W — client requirements
+# Install with: pip install -r requirements_rpi.txt
+
+# HTTP to reach online server
+requests>=2.31.0
+
+# Config parsing
+PyYAML>=6.0
+
+# Image encoding (no display needed)
+opencv-python-headless>=4.8.0
+numpy<2.0
+
+# Raspberry Pi hardware
+picamera2>=0.3.12
+gpiozero>=2.0.0
+pigpio>=1.78        # Needed by gpiozero for hardware PWM (passive buzzer)
