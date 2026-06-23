@@ -10,7 +10,6 @@ Raspberry Pi Zero Live Stream Client with Buzzer Alarm
 import time
 import logging
 import json
-import subprocess
 import threading
 import signal
 import sys
@@ -18,9 +17,10 @@ from pathlib import Path
 from datetime import datetime
 from collections import deque
 import requests
-from gpiozero import Buzzer, LED
+from gpiozero import Buzzer, LED, MotionSensor
 from picamera2 import Picamera2
 import cv2
+import numpy as np
 
 # Setup logging
 logging.basicConfig(
@@ -37,11 +37,13 @@ class RPiPredatorMonitor:
     """Raspberry Pi predator detection monitor with live streaming."""
     
     def __init__(self, 
-                 server_url="http://localhost:8000",
+                 server_url="https://fish-pond-eept.onrender.com/",
                  buzzer_pin=17,
                  led_pin=27,
+                 pir_pin=4,
                  camera_resolution=(640, 480),
-                 stream_port=8554):
+                 fps=5,
+                 idle_timeout=30):
         """
         Initialize the monitor.
         
@@ -52,23 +54,29 @@ class RPiPredatorMonitor:
             camera_resolution: Camera resolution (width, height)
             stream_port: RTSP stream port
         """
-        self.server_url = server_url
+        self.server_url = server_url.rstrip("/")
         self.buzzer_pin = buzzer_pin
         self.led_pin = led_pin
+        self.pir_pin = pir_pin
         self.camera_resolution = camera_resolution
-        self.stream_port = stream_port
+        self.fps = fps
+        self.frame_interval = 1.0 / fps
+        self.idle_timeout = idle_timeout
         
         # Initialize GPIO
         self.buzzer = None
         self.led = None
+        self.pir = None
         self.picam2 = None
-        self.rtsp_server_process = None
         
         # State tracking
         self.is_running = False
+        self._streaming = False
+        self._last_motion_time = 0.0
         self.detection_history = deque(maxlen=50)
         self.last_buzzer_time = 0
         self.buzzer_cooldown = 5  # Seconds between buzzer alerts
+        self._lock = threading.Lock()
         
         # Threads
         self.poll_thread = None
@@ -81,27 +89,30 @@ class RPiPredatorMonitor:
         try:
             logger.info("Initializing hardware...")
             
-            # Initialize GPIO
+            # PIR sensor (motion trigger)
+            self.pir = MotionSensor(self.pir_pin, pull_up=False,
+                                    queue_len=1, threshold=0.5)
+            logger.info(f"✓ PIR sensor initialized on GPIO {self.pir_pin}")
+            
+            # Buzzer
             self.buzzer = Buzzer(self.buzzer_pin)
+            self.buzzer.off()
+            logger.info(f"✓ Buzzer initialized on GPIO {self.buzzer_pin}")
+            
+            # Status LED
             self.led = LED(self.led_pin)
             self.led.on()  # Status LED on during init
-            
-            logger.info(f"✓ Buzzer initialized on GPIO {self.buzzer_pin}")
             logger.info(f"✓ Status LED initialized on GPIO {self.led_pin}")
             
-            # Initialize camera
+            # Camera — video config for reliable capture_array()
             self.picam2 = Picamera2()
-            config = self.picam2.create_preview_configuration(
-                main={"size": self.camera_resolution},
-                lores={"size": (320, 240), "format": "YUV420"}
+            video_cfg = self.picam2.create_video_configuration(
+                main={"size": self.camera_resolution, "format": "RGB888"}
             )
-            self.picam2.configure(config)
-            self.picam2.start()
+            self.picam2.configure(video_cfg)
+            logger.info(f"✓ Camera configured at {self.camera_resolution}")
             
-            logger.info(f"✓ Camera initialized at {self.camera_resolution}")
-            time.sleep(1)  # Allow camera to warm up
-            
-            self.led.off()  # Turn off during normal operation
+            self.led.off()  # Turn off after init
             
         except Exception as e:
             logger.error(f"✗ Hardware initialization failed: {e}")
@@ -125,43 +136,78 @@ class RPiPredatorMonitor:
         """Capture a test image from camera."""
         try:
             logger.info("Capturing test image...")
+            self.picam2.start()
+            time.sleep(0.8)  # warm-up
             array = self.picam2.capture_array()
+            self.picam2.stop()
             cv2.imwrite(output_path, cv2.cvtColor(array, cv2.COLOR_RGB2BGR))
             logger.info(f"✓ Test image saved to {output_path}")
         except Exception as e:
             logger.error(f"✗ Camera test failed: {e}")
     
-    def start_rtsp_stream(self):
-        """Start RTSP server for camera streaming."""
+    def _capture_jpeg(self) -> bytes | None:
+        """Capture a single JPEG frame from picamera2."""
         try:
-            logger.info(f"Starting RTSP stream on port {self.stream_port}...")
-            
-            # Use libcamera-vid with rtsp-simple-server for Pi Zero
-            cmd = [
-                "libcamera-vid",
-                "--camera", "0",
-                "--nopreview",
-                "--rotation", "180",  # Adjust if needed
-                "--width", str(self.camera_resolution[0]),
-                "--height", str(self.camera_resolution[1]),
-                "--framerate", "30",
-                "--bitrate", "2000k",
-                "--flush",
-                "--output", f"rtsp://127.0.0.1:{self.stream_port}/stream"
-            ]
-            
-            self.rtsp_server_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            
-            time.sleep(2)  # Allow stream to start
-            logger.info(f"✓ RTSP stream started at rtsp://0.0.0.0:{self.stream_port}/stream")
-            
+            arr = self.picam2.capture_array()       # RGB888 numpy array
+            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            _, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            return buf.tobytes()
         except Exception as e:
-            logger.error(f"✗ Failed to start RTSP stream: {e}")
-            logger.info("Make sure 'libcamera-vid' is installed: sudo apt install libcamera-apps")
+            logger.error(f"Frame capture error: {e}")
+            return None
+
+    def _push_frame(self, jpeg_bytes: bytes) -> dict | None:
+        """POST a JPEG frame to the server's /api/frame endpoint."""
+        try:
+            resp = requests.post(
+                f"{self.server_url}/api/frame",
+                files={"frame": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            logger.warning(f"Server {resp.status_code}: {resp.text[:120]}")
+        except requests.exceptions.Timeout:
+            logger.warning("Frame push timed out — skipping.")
+        except requests.exceptions.ConnectionError:
+            logger.warning("Cannot reach server — retrying next frame.")
+        except Exception as e:
+            logger.error(f"Push error: {e}")
+        return None
+
+    def _stream_loop(self):
+        """Capture and push frames while _streaming is True."""
+        logger.info(f"▶ Streaming at {self.fps} fps → {self.server_url}")
+        self.picam2.start()
+        time.sleep(0.8)   # Camera warm-up: first frames can be dark/blank
+        if self.led:
+            self.led.on()
+        try:
+            while self._streaming:
+                t0 = time.time()
+                jpeg = self._capture_jpeg()
+                if jpeg:
+                    result = self._push_frame(jpeg)
+                    if result and result.get("detections", 0):
+                        logger.info(
+                            f"  Server: {result['detections']} detection(s) "
+                            f"on frame {result.get('frame')}"
+                        )
+                elapsed = time.time() - t0
+                wait = self.frame_interval - elapsed
+                if wait > 0:
+                    time.sleep(wait)
+        except Exception as e:
+            logger.error(f"Streaming loop error: {e}")
+        finally:
+            self.picam2.stop()
+            if self.led:
+                self.led.off()
+            logger.info("⏹ Streaming stopped.")
+
+    def start_rtsp_stream(self):  # kept for backward compatibility — not used
+        """Deprecated: server now uses push-based /api/frame instead of RTSP."""
+        logger.warning("start_rtsp_stream() is deprecated. Frames are pushed via HTTP POST.")
     
     def trigger_alarm(self, detection_data):
         """Trigger buzzer alarm for predator detection."""
@@ -198,7 +244,7 @@ class RPiPredatorMonitor:
             logger.error(f"✗ Failed to trigger alarm: {e}")
     
     def poll_detections(self):
-        """Poll server for latest detection."""
+        """Poll server for latest detection and trigger buzzer if needed."""
         try:
             response = requests.get(
                 f"{self.server_url}/api/detections/latest",
@@ -207,8 +253,8 @@ class RPiPredatorMonitor:
             
             if response.status_code == 200:
                 data = response.json()
-                
-                if data.get("success") and data.get("detection"):
+                # BUG FIX: server returns {"detection": {...}} — no "success" field
+                if data.get("detection"):  
                     detection = data["detection"]
                     timestamp = detection.get("timestamp")
                     
@@ -225,7 +271,6 @@ class RPiPredatorMonitor:
                         class_name = det.get("class", "").lower()
                         confidence = det.get("confidence", 0)
                         
-                        # Trigger alarm if predator detected with high confidence
                         if any(pred in class_name for pred in predator_classes) and confidence > 0.5:
                             self.trigger_alarm(det)
                     
@@ -257,14 +302,15 @@ class RPiPredatorMonitor:
         try:
             logger.info("=" * 60)
             logger.info("POND SECURITY - Raspberry Pi Predator Monitor")
+            logger.info(f"Server  : {self.server_url}")
+            logger.info(f"PIR     : GPIO {self.pir_pin}")
+            logger.info(f"Buzzer  : GPIO {self.buzzer_pin}")
+            logger.info(f"Camera  : {self.camera_resolution} @ {self.fps} fps")
             logger.info("=" * 60)
             
             self.is_running = True
             
-            # Start RTSP stream
-            self.start_rtsp_stream()
-            
-            # Start polling thread
+            # Start polling thread (buzzer detection)
             self.poll_thread = threading.Thread(
                 target=self.poll_server_continuously,
                 daemon=True
@@ -272,12 +318,28 @@ class RPiPredatorMonitor:
             self.poll_thread.start()
             
             logger.info("✓ Monitor started. Ctrl+C to stop.")
-            logger.info(f"Server URL: {self.server_url}")
-            logger.info(f"RTSP Stream: rtsp://raspberrypi.local:{self.stream_port}/stream")
+            logger.info(f"Waiting for PIR motion on GPIO {self.pir_pin} …")
             
-            # Keep running
+            # PIR-gated streaming loop
             while self.is_running:
-                time.sleep(1)
+                if self.pir.motion_detected:
+                    self._last_motion_time = time.time()
+                    if not self._streaming:
+                        logger.info("🟢 Motion detected — starting stream.")
+                        self._streaming = True
+                        self.stream_thread = threading.Thread(
+                            target=self._stream_loop, daemon=True
+                        )
+                        self.stream_thread.start()
+                else:
+                    if self._streaming:
+                        idle = time.time() - self._last_motion_time
+                        if idle >= self.idle_timeout:
+                            logger.info(f"🔴 No motion for {idle:.0f}s — stopping stream.")
+                            self._streaming = False
+                            if self.stream_thread:
+                                self.stream_thread.join(timeout=10)
+                time.sleep(0.25)
         
         except KeyboardInterrupt:
             logger.info("\nShutdown requested...")
@@ -291,17 +353,10 @@ class RPiPredatorMonitor:
         try:
             logger.info("Stopping monitor...")
             self.is_running = False
+            self._streaming = False  # stop streaming thread
             
-            # Stop RTSP stream
-            if self.rtsp_server_process:
-                self.rtsp_server_process.terminate()
-                self.rtsp_server_process.wait(timeout=5)
-                logger.info("✓ RTSP stream stopped")
-            
-            # Stop camera
-            if self.picam2:
-                self.picam2.stop()
-                logger.info("✓ Camera stopped")
+            if self.stream_thread:
+                self.stream_thread.join(timeout=10)
             
             # Turn off buzzer and LED
             if self.buzzer:
@@ -321,10 +376,10 @@ class RPiPredatorMonitor:
         """Get current status."""
         return {
             "is_running": self.is_running,
+            "streaming": self._streaming,
             "detections_count": len(self.detection_history),
             "server_url": self.server_url,
             "camera_resolution": self.camera_resolution,
-            "stream_port": self.stream_port
         }
 
 
@@ -337,20 +392,38 @@ def main():
     )
     parser.add_argument(
         "--server",
-        default="http://localhost:8000",
-        help="Flask server URL (default: http://localhost:8000)"
+        default="https://fish-pond-eept.onrender.com",
+        help="Flask server URL"
     )
     parser.add_argument(
         "--buzzer-pin",
         type=int,
         default=17,
-        help="GPIO pin for buzzer (default: 17)"
+        help="BCM GPIO pin for buzzer (default: 17)"
     )
     parser.add_argument(
         "--led-pin",
         type=int,
         default=27,
-        help="GPIO pin for status LED (default: 27)"
+        help="BCM GPIO pin for status LED (default: 27)"
+    )
+    parser.add_argument(
+        "--pir-pin",
+        type=int,
+        default=4,
+        help="BCM GPIO pin for PIR sensor (default: 4)"
+    )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=5,
+        help="Frames per second pushed to server (default: 5)"
+    )
+    parser.add_argument(
+        "--idle-timeout",
+        type=int,
+        default=30,
+        help="Seconds of no-motion before stopping stream (default: 30)"
     )
     parser.add_argument(
         "--test",
@@ -373,7 +446,10 @@ def main():
         server_url=args.server,
         buzzer_pin=args.buzzer_pin,
         led_pin=args.led_pin,
-        camera_resolution=(width, height)
+        pir_pin=args.pir_pin,
+        camera_resolution=(width, height),
+        fps=args.fps,
+        idle_timeout=args.idle_timeout,
     )
     
     # Handle signals

@@ -24,10 +24,10 @@ import logging
 import threading
 import signal
 import sys
-import io
-from datetime import datetime
 from pathlib import Path
 
+import cv2
+import numpy as np
 import requests
 from gpiozero import MotionSensor, Buzzer, LED
 from picamera2 import Picamera2
@@ -180,9 +180,7 @@ class PondMonitor:
     def _capture_jpeg(self) -> bytes | None:
         """Capture a single frame from picamera2 and encode as JPEG."""
         try:
-            import cv2
-            import numpy as np
-            arr = self.cam.capture_array()                   # RGB888
+            arr = self.cam.capture_array()        # RGB888 numpy array
             bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
             _, buf = cv2.imencode(
                 ".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 75]
@@ -217,6 +215,7 @@ class PondMonitor:
         """Capture and push frames while streaming is active."""
         logger.info(f"▶ Streaming started ({self.fps} fps → {self.server_url})")
         self.cam.start()
+        time.sleep(0.8)   # Camera warm-up: first frames can be dark/blank
         self._led(True)
 
         try:
@@ -249,8 +248,8 @@ class PondMonitor:
             if self._streaming:
                 return
             self._streaming = True
-            # Notify server that PIR is active
-            self._notify_pir(True)
+        # Notify server OUTSIDE the lock — HTTP request must not block mutex
+        self._notify_pir(True)
 
         self._stream_thread = threading.Thread(
             target=self._stream_loop, daemon=True
@@ -263,7 +262,8 @@ class PondMonitor:
             if not self._streaming:
                 return
             self._streaming = False
-            self._notify_pir(False)
+        # Notify server OUTSIDE the lock — HTTP request must not block mutex
+        self._notify_pir(False)
 
         if self._stream_thread:
             self._stream_thread.join(timeout=10)
