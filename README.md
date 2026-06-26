@@ -81,6 +81,32 @@ Press `q` to quit gracefully.
 tail -f pond_security.log
 ```
 
+## cPanel / DirectAdmin deployment
+
+This project is now prepared for a Python app hosted through Passenger on cPanel or DirectAdmin.
+
+### What to upload
+- Upload the project folder to your hosting account, for example under your public HTML directory or a subdomain folder.
+- Make sure the following files are present:
+  - `passenger_wsgi.py`
+  - `.htaccess`
+  - `flask_server.py`
+  - `requirements.txt`
+
+### Server setup on the host
+1. Create a Python virtual environment in your account.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Replace the placeholder paths in `.htaccess` with your actual account paths:
+   - `PassengerAppRoot`
+   - `PassengerPython`
+4. Restart the application from your hosting panel if needed.
+
+### Important note
+The app uses YOLOv8 and OpenCV, so the host should have enough CPU/RAM and a compatible Python runtime. If the model is too heavy for your shared plan, consider a VPS or a smaller model.
+
 ## Project Structure
 
 ```

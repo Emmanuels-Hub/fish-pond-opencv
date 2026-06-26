@@ -53,7 +53,7 @@ class PondMonitor:
 
     def __init__(
         self,
-        server_url: str = "https://fish-pond-eept.onrender.com",
+        server_url: str = "https://test.anywashapp.com.ng",
         pir_pin: int = 4,
         buzzer_pin: int = 17,
         led_pin: int = 27,
@@ -424,8 +424,8 @@ def main():
     )
     parser.add_argument(
         "--server",
-        default="https://fish-pond-eept.onrender.com/",
-        help="Online Flask server URL  e.g. https://fish-pond-eept.onrender.com/",
+        default="https://test.anywashapp.com.ng/",
+        help="Online Flask server URL  e.g. https://test.anywashapp.com.ng/",
     )
     parser.add_argument("--pir-pin",     type=int, default=4,
                         help="BCM GPIO pin for PIR sensor (default: 4)")

@@ -1,0 +1,13 @@
+<IfModule mod_passenger.c>
+    PassengerEnabled On
+    PassengerAppType wsgi
+    PassengerStartupFile passenger_wsgi.py
+    PassengerAppRoot /home/USERNAME/public_html/fish-pond-opencv
+    PassengerBaseURI /
+    PassengerPython /home/USERNAME/virtualenv/fish-pond-opencv/bin/python
+</IfModule>
+
+# Replace the placeholder paths above with your real cPanel/DirectAdmin paths.
+# Example:
+# PassengerAppRoot /home/youruser/public_html/fish-pond-opencv
+# PassengerPython /home/youruser/virtualenv/fish-pond-opencv/bin/python

@@ -37,7 +37,7 @@ class RPiPredatorMonitor:
     """Raspberry Pi predator detection monitor with live streaming."""
     
     def __init__(self, 
-                 server_url="https://fish-pond-eept.onrender.com/",
+                 server_url="https://test.anywashapp.com.ng/",
                  buzzer_pin=17,
                  led_pin=27,
                  pir_pin=4,
@@ -392,7 +392,7 @@ def main():
     )
     parser.add_argument(
         "--server",
-        default="https://fish-pond-eept.onrender.com",
+        default="https://test.anywashapp.com.ng",
         help="Flask server URL"
     )
     parser.add_argument(

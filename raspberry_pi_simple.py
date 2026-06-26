@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 class SimplePondMonitor:
     """Lightweight Pond Monitor for Raspberry Pi Zero."""
     
-    def __init__(self, server_url="https://fish-pond-eept.onrender.com/", buzzer_pin=17):
+    def __init__(self, server_url="https://test.anywashapp.com.ng/", buzzer_pin=17):
         """Initialize monitor."""
         self.server_url = server_url
         self.buzzer_pin = buzzer_pin
@@ -168,7 +168,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Simple Pond Monitor")
-    parser.add_argument("--server", default="https://fish-pond-eept.onrender.com/", help="Server URL")
+    parser.add_argument("--server", default="https://test.anywashapp.com.ng/", help="Server URL")
     parser.add_argument("--buzzer-pin", type=int, default=17, help="Buzzer GPIO pin")
     parser.add_argument("--test", action="store_true", help="Test buzzer only")
     parser.add_argument("--interval", type=int, default=2, help="Check interval in seconds")
