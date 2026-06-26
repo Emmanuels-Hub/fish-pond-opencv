@@ -2,8 +2,7 @@ numpy<2.0
 opencv-python>=4.8.0
 ultralytics>=8.1.0
 PyYAML>=6.0
-torch>=2.2.0
-torchvision>=0.17.0
+
 Werkzeug>=2.3.0
 Flask
 gunicorn
